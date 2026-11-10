@@ -19,7 +19,8 @@ const CFG = {
   DRY_RUN: true,               // true = write to sheets/log only; no Admin or bay changes. Set false to go live.
 };
 const SH = { CHECKOUTS: 'Checkouts', OVERDUE: 'Overdue', MAP: 'Bay Map', WH: 'Webhook Log', LOG: 'Log' };
-const CO_COLS = ['Bay ID', 'Bay Name', 'Asset Tag', 'User ID', 'Student', 'Student ID', 'Checked Out', 'Returned', 'Status', 'Bay #', 'Station'];
+// "User ID" = the student's ID number (the portal's PIN); "Station User" = Lock N Charge's internal key.
+const CO_COLS = ['Bay ID', 'Bay Name', 'Asset Tag', 'User ID', 'Student', 'Station User', 'Checked Out', 'Returned', 'Status', 'Bay #', 'Station'];
 // Columns A-G match the old "Sheet 1" so its rows can be pasted straight in. H onward are used by the script.
 const OD_COLS = ['Name', 'Bay #', 'Asset Tag', 'Notes', 'AF NOTES', 'ATTEMPTS TO CONTACT', 'LINK TO PASS',
                  'Status', 'Returned At', 'Bay ID', 'Station', 'Student ID'];
@@ -132,7 +133,7 @@ function onCheckout_(bayId, ev) {
   const tag = assetTagForBay_(d.bayName);   // bay name = Chromebook asset tag
   const ts = ev.timestamp ? new Date(ev.timestamp) : new Date();
   const co = checkoutsSheet_();
-  co.appendRow([bayId, d.bayName, tag, uid, name, sid, ts, '', 'Out', d.bay, d.stationName]);
+  co.appendRow([bayId, d.bayName, tag, sid, name, uid, ts, '', 'Out', d.bay, d.stationName]);
   co.getRange(co.getLastRow(), 7, 1, 2).setNumberFormat('M/d/yyyy h:mm AM/PM');   // Checked Out + Returned columns
 }
 
@@ -225,7 +226,7 @@ function checkOverdue() {
       const ok = setChromebookEnabled_(r[2], false);
       try { lncSetBayOnline_(r[0], false); } catch (e) { log_('bay offline failed: ' + e); }
       od.appendRow([r[4], r[9], r[2], Utilities.formatDate(new Date(r[6]), CFG.TZ, 'MMM d'),
-        ok ? '' : 'Auto-disable FAILED - see Log tab', '', '', 'Overdue', '', r[0], r[10], r[5]]);
+        ok ? '' : 'Auto-disable FAILED - see Log tab', '', '', 'Overdue', '', r[0], r[10], r[3]]);
     });
     sortOverdue_(od);
   } finally { lock.releaseLock(); }
@@ -306,13 +307,22 @@ function testSheetSetup() {
   const ss = ss_();
   Logger.log('Writing to spreadsheet: "' + ss.getName() + '" ' + ss.getUrl());
   overdueSheet_().appendRow(['TEST STUDENT', 0, 'TEST-TAG', 'Test', '', '', '', 'Overdue', '', 'test-bay', 'TEST', '000000']);
-  checkoutsSheet_().appendRow(['test-bay', 'TEST-TAG', 'TEST-TAG', 'u', 'TEST STUDENT', '000000', new Date(), '', 'Returned']);
+  checkoutsSheet_().appendRow(['test-bay', 'TEST-TAG', 'TEST-TAG', '000000', 'TEST STUDENT', 'u', new Date(), '', 'Returned']);
   sortOverdue_(overdueSheet_());
   log_('testSheetSetup ran');
 }
 
 /** Run once to add the Out/Returned dropdown to an existing Checkouts tab. */
 function setupCheckoutsDropdown() { checkoutsSheet_(); }
+
+/** Run ONCE after this update: clears the Checkouts tab and rewrites its header with the new column order. */
+function resetCheckoutsTab() {
+  const s = checkoutsSheet_();
+  s.clear();
+  s.appendRow(CO_COLS); s.setFrozenRows(1);
+  s.getRange(1, 1, 1, CO_COLS.length).setFontWeight('bold').setBackground('#d9e2f3');
+  checkoutsSheet_();   // re-applies the Out/Returned dropdown
+}
 
 /** Run ONCE before pasting your old rows: clears the Overdue tab (including test rows) and rewrites its header. */
 function resetOverdueTab() {
